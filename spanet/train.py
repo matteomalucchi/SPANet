@@ -174,6 +174,8 @@ def main(
             monitor=metric,
             filename=f'{{epoch}}-{{{metric}:.3f}}',
             auto_insert_metric_name=False,
+            #filename='{epoch}-{step}-{validation_average_jet_accuracy:.3f}',
+            #monitor='validation_average_jet_accuracy',
             save_top_k=3,
             mode='max',
             save_last=True

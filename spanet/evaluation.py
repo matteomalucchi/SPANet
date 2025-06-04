@@ -14,6 +14,13 @@ from spanet.network.jet_reconstruction.jet_reconstruction_network import extract
 from collections import defaultdict
 
 
+def default_assignment_fn(outputs: Outputs):
+    return extract_predictions([
+        np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
+        for assignment in outputs.assignments
+    ])
+
+
 def dict_concatenate(tree):
     output = {}
     for key, value in tree.items():
@@ -51,7 +58,8 @@ def load_model(
     batch_size: Optional[int] = None,
     cuda: bool = False,
     fp16: bool = False,
-    checkpoint: Optional[str] = None
+    checkpoint: Optional[str] = None,
+    overrides: Optional[dict] = None
 ) -> JetReconstructionModel:
     # Load the best-performing checkpoint on validation data
     if checkpoint is None:
@@ -83,10 +91,14 @@ def load_model(
     if batch_size is not None:
         options.batch_size = batch_size
 
+    if overrides is not None:
+        for key, value in overrides.items():
+            setattr(options, key, value)
+
     # Create model and disable all training operations for speed
     model = JetReconstructionModel(options)
     model.load_state_dict(checkpoint)
-    model = model.eval()
+    model = model.eval().cpu().float()
     for parameter in model.parameters():
         parameter.requires_grad_(False)
 
@@ -100,7 +112,8 @@ def evaluate_on_test_dataset(
         model: JetReconstructionModel,
         progress=progress,
         return_full_output: bool = False,
-        fp16: bool = False
+        fp16: bool = False,
+        assignment_fn=default_assignment_fn
 ) -> Union[Evaluation, Tuple[Evaluation, Outputs]]:
     full_assignments = defaultdict(list)
     full_assignment_probabilities = defaultdict(list)
@@ -121,10 +134,7 @@ def evaluate_on_test_dataset(
         with torch.cuda.amp.autocast(enabled=fp16):
             outputs = model.forward(sources)
 
-        assignment_indices = extract_predictions([
-            np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
-            for assignment in outputs.assignments
-        ])
+        assignment_indices = assignment_fn(outputs)
 
         detection_probabilities = np.stack([
             torch.sigmoid(detection).cpu().numpy()
@@ -187,4 +197,3 @@ def evaluate_on_test_dataset(
         return evaluation, tree_concatenate(full_outputs)
 
     return evaluation
-
