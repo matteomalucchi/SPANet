@@ -175,7 +175,7 @@ def main(
             verbose=options.verbose_output,
             monitor=metric,
             filename=f'{{epoch}}-{{{metric}:.3f}}',
-            auto_insert_metric_name=True,
+            auto_insert_metric_name=False,
             #filename='{epoch}-{step}-{validation_average_jet_accuracy:.3f}',
             #monitor='validation_average_jet_accuracy',
             save_top_k=10,
