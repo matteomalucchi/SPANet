@@ -165,7 +165,9 @@ def main(
     # )
 
     # Create the checkpoint for this training run. We will save the best validation networks based on 'accuracy'
-    metric = metric if metric is not None else 'validation_accuracy'
+    if metric is not None:
+        options.metric = metric
+    metric = options.metric if options.metric is not None else 'validation_accuracy'
 
     print(metric)
     callbacks = [
@@ -173,10 +175,10 @@ def main(
             verbose=options.verbose_output,
             monitor=metric,
             filename=f'{{epoch}}-{{{metric}:.3f}}',
-            auto_insert_metric_name=False,
+            auto_insert_metric_name=True,
             #filename='{epoch}-{step}-{validation_average_jet_accuracy:.3f}',
             #monitor='validation_average_jet_accuracy',
-            save_top_k=3,
+            save_top_k=10,
             mode='max',
             save_last=True
         ),
@@ -241,7 +243,7 @@ if __name__ == '__main__':
                         help="Optional checkpoint to load the training state from. "
                              "Fully restores model weights and optimizer state.")
 
-    parser.add_argument("-mt", "--metric", type=str, default='validation_accuracy',
+    parser.add_argument("-mt", "--metric", type=str, default=None,
                         help="Optional metric by which the checkpoints are chosen")
 
     parser.add_argument("-sf", "--state_dict", type=str, default=None,
