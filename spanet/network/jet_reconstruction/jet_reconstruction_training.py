@@ -14,6 +14,11 @@ from spanet.network.utilities.divergence_losses import assignment_cross_entropy_
 
 import mdmm
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 def numpy_tensor_array(tensor_list):
     output = np.empty(len(tensor_list), dtype=object)
     output[:] = tensor_list
@@ -235,6 +240,7 @@ class JetReconstructionTraining(JetReconstructionNetwork):
 
             if self.balance_events:
                 assert event_weights is not None, "Event weights are required for balancing classifications."
+
                 current_loss = F.cross_entropy(
                     current_prediction,
                     current_target,
@@ -309,7 +315,14 @@ class JetReconstructionTraining(JetReconstructionNetwork):
 
         # Take the weighted average of the symmetric loss terms.
         masks = masks.unsqueeze(1)
-        symmetric_losses = (weights * symmetric_losses).sum(-1) / torch.clamp(masks.sum(-1), 1, None)
+
+        if self.balance_events:
+            assert batch.event_weights != None
+            denum = (masks*batch.event_weights).sum(-1)
+            denum = torch.where(masks.sum(-1) > 0, denum, torch.ones_like(denum))
+            symmetric_losses = (weights * symmetric_losses* batch.event_weights).sum(-1) / denum
+        else:
+            symmetric_losses = (weights * symmetric_losses).sum(-1) / torch.clamp(masks.sum(-1), 1, None)
         assignment_loss, detection_loss = torch.unbind(symmetric_losses, 1)
 
         # ===================================================================================================
