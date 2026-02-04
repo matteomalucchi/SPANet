@@ -14,6 +14,13 @@ from spanet.network.jet_reconstruction.jet_reconstruction_network import extract
 from collections import defaultdict
 
 
+def default_assignment_fn(outputs: Outputs):
+    return extract_predictions([
+        np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
+        for assignment in outputs.assignments
+    ])
+
+
 def dict_concatenate(tree):
     output = {}
     for key, value in tree.items():
@@ -34,6 +41,15 @@ def tree_concatenate(trees):
     results = [np.concatenate(l) for l in zip(*leaves)]
     return tree_unflatten(results, tree_spec)
 
+def get_score(check_dict, file):
+    print(file)
+    if "last" in file: #score of 0 for last means, if there is any better training, this will be the one taken.
+        check_dict[0] = file
+        return check_dict
+    parts = file.split('-')
+    score = float(f"{parts[1].split('.')[0]}.{parts[1].split('.')[1]}") #rather some hack to get the score out of the filename
+    check_dict[score] = file
+    return check_dict
 
 def load_model(
     log_directory: str,
@@ -42,13 +58,21 @@ def load_model(
     batch_size: Optional[int] = None,
     cuda: bool = False,
     fp16: bool = False,
-    checkpoint: Optional[str] = None
+    checkpoint: Optional[str] = None,
+    overrides: Optional[dict] = None
 ) -> JetReconstructionModel:
     # Load the best-performing checkpoint on validation data
     if checkpoint is None:
-        checkpoint = sorted(glob(f"{log_directory}/checkpoints/epoch*"))[-1]
-        print(f"Loading: {checkpoint}")
+        checkpoints = sorted(glob(f"{log_directory}/checkpoints/*"))
+        #Get maximal value for the checkpoint score by disecting the name and creating a dictionary of score to filename
+        #Then chose the dictionary key with the maximum value (the maximal score) and take the corresponding file.
+        check_dict = {}
+        for point in checkpoints:
+            check_dict=get_score(check_dict,point)
+        maxval = max(check_dict.keys())
+        checkpoint = check_dict[maxval]
 
+    print(f"Loading: {checkpoint}")
     checkpoint = torch.load(checkpoint, map_location='cpu')
     checkpoint = checkpoint["state_dict"]
     if fp16:
@@ -67,10 +91,14 @@ def load_model(
     if batch_size is not None:
         options.batch_size = batch_size
 
+    if overrides is not None:
+        for key, value in overrides.items():
+            setattr(options, key, value)
+
     # Create model and disable all training operations for speed
     model = JetReconstructionModel(options)
     model.load_state_dict(checkpoint)
-    model = model.eval()
+    model = model.eval().cpu().float()
     for parameter in model.parameters():
         parameter.requires_grad_(False)
 
@@ -84,7 +112,8 @@ def evaluate_on_test_dataset(
         model: JetReconstructionModel,
         progress=progress,
         return_full_output: bool = False,
-        fp16: bool = False
+        fp16: bool = False,
+        assignment_fn=default_assignment_fn
 ) -> Union[Evaluation, Tuple[Evaluation, Outputs]]:
     full_assignments = defaultdict(list)
     full_assignment_probabilities = defaultdict(list)
@@ -105,10 +134,7 @@ def evaluate_on_test_dataset(
         with torch.cuda.amp.autocast(enabled=fp16):
             outputs = model.forward(sources)
 
-        assignment_indices = extract_predictions([
-            np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
-            for assignment in outputs.assignments
-        ])
+        assignment_indices = assignment_fn(outputs)
 
         detection_probabilities = np.stack([
             torch.sigmoid(detection).cpu().numpy()
@@ -171,4 +197,3 @@ def evaluate_on_test_dataset(
         return evaluation, tree_concatenate(full_outputs)
 
     return evaluation
-

@@ -10,8 +10,6 @@ import os
 
 seed= int(os.environ.get("SEED", -1))
 
-print("seed",seed)
-
 print(f"Seed: {seed}, type: {type(seed)}")
 
 if seed != -1:
@@ -30,7 +28,7 @@ if seed != -1:
     print(f"Seed {seed} \n")
 else:
     print("Seed is None")
-    
+
 import pytorch_lightning as pl
 from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -57,6 +55,7 @@ def main(
         validation_file: str,
         options_file: Optional[str],
         checkpoint: Optional[str],
+        metric: Optional[str],
         state_dict: Optional[str],
         freeze_state_dict: bool,
 
@@ -158,18 +157,28 @@ def main(
 
     # Construct the logger for this training run. Logs will be saved in {logdir}/{name}/version_i
     log_dir = getcwd() if log_dir is None else log_dir
-    logger = (
-        WandbLogger(name=name, save_dir=log_dir)
-        if _WANDB_AVAILABLE else
-        TensorBoardLogger(save_dir=log_dir, name=name)
-    )
+    logger = TensorBoardLogger(save_dir=log_dir, name=name)
+    # logger = (
+    #     WandbLogger(name=name, save_dir=log_dir)
+    #     if _WANDB_AVAILABLE else
+    #     TensorBoardLogger(save_dir=log_dir, name=name)
+    # )
 
     # Create the checkpoint for this training run. We will save the best validation networks based on 'accuracy'
+    if metric is not None:
+        options.metric = metric
+    metric = options.metric if options.metric is not None else 'validation_accuracy'
+
+    print(metric)
     callbacks = [
         ModelCheckpoint(
             verbose=options.verbose_output,
-            monitor='validation_accuracy',
-            save_top_k=3,
+            monitor=metric,
+            filename=f'{{epoch}}-{{{metric}:.3f}}',
+            auto_insert_metric_name=False,
+            #filename='{epoch}-{step}-{validation_average_jet_accuracy:.3f}',
+            #monitor='validation_average_jet_accuracy',
+            save_top_k=10,
             mode='max',
             save_last=True
         ),
@@ -233,6 +242,9 @@ if __name__ == '__main__':
     parser.add_argument("-cf", "--checkpoint", type=str, default=None,
                         help="Optional checkpoint to load the training state from. "
                              "Fully restores model weights and optimizer state.")
+
+    parser.add_argument("-mt", "--metric", type=str, default=None,
+                        help="Optional metric by which the checkpoints are chosen")
 
     parser.add_argument("-sf", "--state_dict", type=str, default=None,
                         help="Load from checkpoint but only the model weights. "
