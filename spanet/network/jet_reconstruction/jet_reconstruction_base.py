@@ -11,6 +11,7 @@ from spanet.dataset.jet_reconstruction_dataset import JetReconstructionDataset
 from spanet.network.learning_rate_schedules import get_linear_schedule_with_warmup
 from spanet.network.learning_rate_schedules import get_cosine_with_hard_restarts_schedule_with_warmup
 
+import mdmm
 
 class JetReconstructionBase(pl.LightningModule):
     def __init__(self, options: Options):
@@ -36,11 +37,18 @@ class JetReconstructionBase(pl.LightningModule):
             self.jet_weights_tensor = torch.nn.Parameter(jet_weights_tensor, requires_grad=False)
             self.balance_jets = True
 
+        # Compute event weights
+        self.balance_events = options.balance_events
+        if self.balance_events:
+            event_weights = self.training_dataset.event_weights
+        else:
+            event_weights = None
+
         self.balance_classifications = options.balance_classifications
         if self.balance_classifications:
             classification_weights = {
                 key: torch.nn.Parameter(value, requires_grad=False)
-                for key, value in self.training_dataset.compute_classification_balance().items()
+                for key, value in self.training_dataset.compute_classification_balance(event_weights).items()
             }
 
             self.classification_weights = torch.nn.ParameterDict(classification_weights)
@@ -85,7 +93,7 @@ class JetReconstructionBase(pl.LightningModule):
         validation_range = 1.0
 
         # If we dont have a validation file provided, create one from the training file.
-        if len(validation_file) == 0:
+        if not validation_file:
             validation_file = training_file
 
             # Compute the training / validation ranges based on the data-split and the limiting percentage.
@@ -115,7 +123,7 @@ class JetReconstructionBase(pl.LightningModule):
         # Optionally construct the testing dataset.
         # This is not used in the main training script but is still useful for testing later.
         testing_dataset = None
-        if len(self.options.testing_file) > 0:
+        if self.options.testing_file:
             testing_dataset = self.dataset(
                 data_file=self.options.testing_file,
                 event_info=self.options.event_info_file,
@@ -167,6 +175,42 @@ class JetReconstructionBase(pl.LightningModule):
             },
         ]
 
+        if self.options.mdmm_loss_scale > 0:
+            if self.options.assignment_loss_scale <= 0:
+                raise ValueError("MDMM loss requires assignment loss to be enabled.")
+            if self.options.classification_loss_scale <= 0:
+                raise ValueError("MDMM loss requires classification loss to be enabled.")
+
+            # Define MDMM constraints
+            constraint_assignment = mdmm.MaxConstraint(
+                self.get_assignment_loss,
+                max=self.options.mdmm_jet_assignment_max, # to be tuned based on the jet assignment loss
+                scale=self.options.mdmm_jet_assignment_scale,
+                damping=self.options.mdmm_jet_assignment_damping,
+            )
+
+            constraints = [constraint_assignment]
+
+            if self.options.detection_loss_scale > 0:
+                constraint_detection = mdmm.MaxConstraint(
+                    self.get_detection_loss,
+                    max=self.options.mdmm_detection_max, # to be tuned based on the jet detection loss
+                    scale=self.options.mdmm_detection_scale,
+                    damping=self.options.mdmm_detection_damping,
+                )
+                constraints.append(constraint_detection)
+
+            # Define MDMM module with constraints
+            self.mdmm_module = mdmm.MDMM(constraints)
+            lambdas = [c.lmbda for c in self.mdmm_module]
+            slacks = [c.slack for c in self.mdmm_module if hasattr(c, 'slack')]
+
+            # Update optimizer parameters with MDMM parameters
+            optimizer_grouped_parameters += [
+                {'params': lambdas, 'lr': -self.options.learning_rate},
+                {'params': slacks, 'lr': self.options.learning_rate}
+            ]
+
         optimizer = optimizer(optimizer_grouped_parameters, lr=self.options.learning_rate)
 
         if self.options.learning_rate_cycles < 1:
@@ -192,10 +236,10 @@ class JetReconstructionBase(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def train_dataloader(self) -> DataLoader:
-        return self.dataloader(self.training_dataset, shuffle=True, drop_last=True, **self.dataloader_options)
+        return self.dataloader(self.training_dataset, shuffle=True, drop_last=False, **self.dataloader_options)
 
     def val_dataloader(self) -> DataLoader:
-        return self.dataloader(self.validation_dataset, drop_last=True, **self.dataloader_options)
+        return self.dataloader(self.validation_dataset, drop_last=False, **self.dataloader_options)
 
     def test_dataloader(self) -> DataLoader:
         if self.testing_dataset is None:

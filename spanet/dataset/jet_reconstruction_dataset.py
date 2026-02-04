@@ -30,7 +30,8 @@ TBatch = Tuple[
     Tensor,
     Tuple[Tuple[Tensor, Tensor], ...],
     Dict[str, Tensor],
-    Dict[str, Tensor]
+    Dict[str, Tensor],
+    Tensor
 ]
 
 
@@ -112,6 +113,9 @@ class JetReconstructionDataset(Dataset):
             self.regressions, self.regression_types = self.load_regressions(file, limit_index)
             self.classifications = self.load_classifications(file, limit_index)
 
+            # Load the weights for the dataset.
+            self.event_weights = self.load_event_weights(file, limit_index)
+
             # Update size information after loading and limiting dataset.
             self.num_events = limit_index.shape[0]
             self.num_vectors = sum(source.num_vectors() for source in self.sources.values())
@@ -178,7 +182,7 @@ class JetReconstructionDataset(Dataset):
         # Make sure the resulting index array is sorted for faster loading.
         return np.sort(limit_index)
 
-    def load_assignments(self, hdf5_file: h5py.File, limit_index: np.ndarray) -> Dict[str, Tuple[Tensor, Tensor]]:
+    def load_assignments(self, hdf5_file: h5py.File, limit_index: np.ndarray) -> Dict[str, Tuple[Tensor, Tensor, Tensor]]:
         """ Load target indices for every defined target
 
         Parameters
@@ -191,7 +195,7 @@ class JetReconstructionDataset(Dataset):
         Returns
         -------
         OrderedDict: str -> (Tensor, Tensor)
-            A dictionary mapping the target name to the target indices and mask.
+            A dictionary mapping the target name to the target indices, mask and weight.
         """
         targets = OrderedDict()
         for event_particle, daughter_particles in self.event_info.product_particles.items():
@@ -215,10 +219,18 @@ class JetReconstructionDataset(Dataset):
             except KeyError:
                 target_mask = (target_data >= 0).all(1)
 
+            # Either load an explicit weight or generate ones weights
+            try:
+                target_weight = self.dataset(hdf5_file, [SpecialKey.Targets, event_particle], SpecialKey.Weight)
+            except KeyError:
+                print("Warning: no target weights in the dataset, creating ones weights")
+                target_weight = torch.ones_like(target_mask, dtype=float)
+
             target_data = target_data[limit_index]
             target_mask = target_mask[limit_index]
+            target_weight = target_weight[limit_index]
 
-            targets[event_particle] = (target_data, target_mask)
+            targets[event_particle] = (target_data, target_mask, target_weight)
 
         return targets
 
@@ -272,6 +284,12 @@ class JetReconstructionDataset(Dataset):
                     add_target(*tree_key_data([particle, daughter], target))
 
         return targets
+
+    def load_event_weights(self, hdf5_file: h5py.File, limit_index: np.ndarray) -> Dict[str, Tensor]:
+
+        data = hdf5_file[SpecialKey.Weights]["weight"]
+
+        return torch.from_numpy(data[:][limit_index])
 
     def compute_source_statistics(
             self,
@@ -390,17 +408,42 @@ class JetReconstructionDataset(Dataset):
 
         return vector_class_weights
 
-    def compute_classification_balance(self):
-        def compute_effective_counts(targets):
-            beta = 1 - (1 / targets.shape[0])
-            vector_class_weights = (1 - beta) / (1 - (beta ** torch.bincount(targets)))
+    def compute_classification_balance(self, event_weights: Optional[Tensor] = None):
+        def compute_effective_counts(targets, event_weights=None):
+            if event_weights == None:
+                beta = 1 - (1 / targets.shape[0])
+                vector_class_weights = (1 - beta) / (1 - (beta ** torch.bincount(targets)))
+            else:
+                beta = 1 - (1 / event_weights.sum())
+                vector_class_weights = (1 - beta) / (1 - (beta ** torch.bincount(targets, weights=event_weights)))
+                # print(vector_class_weights)
             vector_class_weights[torch.isinf(vector_class_weights)] = 0
             vector_class_weights = vector_class_weights.shape[0] * vector_class_weights / vector_class_weights.sum()
+
+            # print("targets",len(targets))
+            # print("signal targets",len(targets[targets==1]))
+            # print("bckg targets",len(targets[targets==0]))
+
+            signal_event_weights= event_weights[targets==1]
+            bckg_event_weights=event_weights[targets==0]
+
+            total_signal_weight= signal_event_weights.sum() * vector_class_weights[1]
+            total_bckg_weight= bckg_event_weights.sum() * vector_class_weights[0]
+
+            # print("Sum of signal Event weights", signal_event_weights.sum())
+            # print("Sum of background Event weights", bckg_event_weights.sum())
+
+            # print("Sum of signal Class weights", vector_class_weights[1].sum())
+            # print("Sum of background Class weights", vector_class_weights[0].sum())
+
+            # print("total signal weights",total_signal_weight)
+            # print("total background weights",total_bckg_weight)
+
 
             return vector_class_weights
 
         return OrderedDict((
-            (key, compute_effective_counts(value))
+            (key, compute_effective_counts(value, event_weights))
             for key, value in self.classifications.items()
             if value is not None
         ))
@@ -410,12 +453,13 @@ class JetReconstructionDataset(Dataset):
             source.limit(event_mask)
 
         for key in self.assignments:
-            assignments, masks = self.assignments[key]
+            assignments, masks, weights = self.assignments[key]
 
             assignments = assignments[event_mask].contiguous()
             masks = masks[event_mask].contiguous()
+            weights = weights[event_mask].contiguous()
 
-            self.assignments[key] = (assignments, masks)
+            self.assignments[key] = (assignments, masks, weights)
 
         for key, regressions in self.regressions.items():
             self.regressions[key] = regressions[event_mask]
@@ -449,8 +493,8 @@ class JetReconstructionDataset(Dataset):
         )
 
         assignments = tuple(
-            AssignmentTargets(assignment[item], mask[item])
-            for assignment, mask in self.assignments.values()
+            AssignmentTargets(assignment[item], mask[item], weight[item])
+            for assignment, mask, weight in self.assignments.values()
         )
 
         regressions = {
@@ -470,5 +514,6 @@ class JetReconstructionDataset(Dataset):
             self.num_vectors[item],
             assignments,
             regressions,
-            classifications
+            classifications,
+            self.event_weights[item]
         )

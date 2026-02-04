@@ -117,6 +117,7 @@ ClassificationInfo = str
 
 class SpecialKey(str, Enum):
     Mask = "MASK"
+    Weight = "WEIGHT"
     Event = "EVENT"
     Inputs = "INPUTS"
     Targets = "TARGETS"
@@ -125,6 +126,7 @@ class SpecialKey(str, Enum):
     Permutations = "PERMUTATIONS"
     Classifications = "CLASSIFICATIONS"
     Embeddings = "EMBEDDINGS"
+    Weights = "WEIGHTS"
 
 
 class Source(NamedTuple):
@@ -146,6 +148,7 @@ class InputType(str, Enum):
 class AssignmentTargets(NamedTuple):
     indices: Tensor
     mask: Tensor
+    weight: Tensor
 
 
 class Batch(NamedTuple):
@@ -154,6 +157,7 @@ class Batch(NamedTuple):
     assignment_targets: Tuple[AssignmentTargets, ...]
     regression_targets: Dict[str, Tensor]
     classification_targets: Dict[str, Tensor]
+    event_weights: Tensor
 
 
 class Outputs(NamedTuple):
