@@ -162,7 +162,7 @@ If you use this software for a publication, please cite the following:
 ```bibtex
 @Article{10.21468/SciPostPhys.12.5.178,
 	title={{SPANet: Generalized permutationless set assignment for particle physics  using symmetry preserving attention}},
-	author={er Shmakov and Michael James Fenton and Ta-Wei Ho and Shih-Chieh Hsu and Daniel Whiteson and Pierre Baldi},
+	author={Alexander Shmakov and Michael James Fenton and Ta-Wei Ho and Shih-Chieh Hsu and Daniel Whiteson and Pierre Baldi},
 	journal={SciPost Phys.},
 	volume={12},
 	pages={178},
