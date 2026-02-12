@@ -26,7 +26,8 @@ setup(
         'pyyaml',
         'opt_einsum',
         'scikit-learn',
-        'rich'
+        'rich',
+        'mdmm'
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
