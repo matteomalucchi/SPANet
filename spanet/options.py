@@ -1,6 +1,6 @@
 import json
 from argparse import Namespace
-
+import os
 
 class Options(Namespace):
     def __init__(self, event_info_file: str = "", training_file: str = "", validation_file: str = "", testing_file: str = ""):
@@ -316,7 +316,11 @@ class Options(Namespace):
         for key, value in new_options.items():
             if not update_datasets and key in {"event_info_file", "training_file", "validation_file", "testing_file"}:
                 continue
-
+            
+            # Expand environment variables if value is a string
+            if isinstance(value, str):
+                value = os.path.expanduser(os.path.expandvars(value))
+            
             if key in integer_options:
                 setattr(self, key, int(value))
             elif key in boolean_options:
