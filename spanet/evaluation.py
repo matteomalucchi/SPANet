@@ -63,7 +63,8 @@ def load_model(
 ) -> JetReconstructionModel:
     # Load the best-performing checkpoint on validation data
     if checkpoint is None:
-        checkpoints = sorted(glob(f"{log_directory}/checkpoints/*"))
+        # reverse the files to evaluate the first model which has the highest accuracy and not the last
+        checkpoints = sorted(glob(f"{log_directory}/checkpoints/*"), reverse=True)
         #Get maximal value for the checkpoint score by disecting the name and creating a dictionary of score to filename
         #Then chose the dictionary key with the maximum value (the maximal score) and take the corresponding file.
         check_dict = {}
