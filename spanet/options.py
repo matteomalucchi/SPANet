@@ -10,7 +10,7 @@ class Options(Namespace):
         # Network Architecture
         # =========================================================================================
 
-        self.metric: str = "CLASSIFICATIONS/EVENT/signal_accuracy"
+        self.metric: str = "validation_accuracy"
         # Dimensions used internally by all hidden layers / transformers.
         self.hidden_dim: int = 128
 
