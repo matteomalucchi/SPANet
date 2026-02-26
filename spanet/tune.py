@@ -58,9 +58,9 @@ try:
     )
     from ray.train.torch import TorchTrainer
 
-except ImportError:
+except ImportError as e:
     print("Tuning script requires additional dependencies. Please run: pip install \"ray[tune]\" \"ray[train]\" hyperopt")
-    exit()
+    raise e
 
 
 DEFAULT_CONFIG = {
