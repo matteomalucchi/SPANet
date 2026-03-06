@@ -48,7 +48,7 @@ class JetReconstructionBase(pl.LightningModule):
         if self.balance_classifications:
             classification_weights = {
                 key: torch.nn.Parameter(value, requires_grad=False)
-                for key, value in self.training_dataset.compute_classification_balance(event_weights).items()
+                for key, value in self.training_dataset.compute_classification_balance(event_weights, options.signal_class_weight_factor).items()
             }
 
             self.classification_weights = torch.nn.ParameterDict(classification_weights)

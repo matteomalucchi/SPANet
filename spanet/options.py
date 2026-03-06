@@ -162,6 +162,7 @@ class Options(Namespace):
 
         # Whether or not to add a weight to classification heads based on target presence.
         self.balance_classifications: bool = False
+        self.signal_class_weight_factor: float = 1.0
 
         #Whether or not to add an event weight to the loss function.
         self.balance_events: bool = False
