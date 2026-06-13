@@ -248,9 +248,9 @@ class JetReconstructionValidation(JetReconstructionNetwork):
             accuracy_totw = accuracy * combined_weights
             accuracy_totw_0 = accuracy_0 * combined_weights[classification_targets[key] == 0]
             accuracy_totw_1 = accuracy_1 * combined_weights[classification_targets[key] == 1]
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight", accuracy.sum() / combined_weights.sum(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target0", accuracy_0.sum() / combined_weights[classification_targets[key] == 0].sum(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target1", accuracy_1.sum() / combined_weights[classification_targets[key] == 1].sum(), sync_dist=True)
+            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight", accuracy_totw.sum() / combined_weights.sum(), sync_dist=True)
+            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target0", accuracy_totw_0.sum() / combined_weights[classification_targets[key] == 0].sum(), sync_dist=True)
+            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target1", accuracy_totw_1.sum() / combined_weights[classification_targets[key] == 1].sum(), sync_dist=True)
 
         for name, value in metrics.items():
             if not np.isnan(value):
