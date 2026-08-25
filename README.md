@@ -77,6 +77,7 @@ the different setup components, or just follow the ttbar example.
 1. [Defining the event topology](docs/EventInfo.md).
 2. [Creating a training dataset](docs/Dataset.md).
 3. [Configuring training options](docs/Options.md).
+4. [Optimizing the hyperparameters](docs/HyperparameterOptimization.md).
 
 
 ### Training
@@ -89,6 +90,26 @@ You can experiment with the provided example configuration and dataset
 for some `ttbar` events by calling 
 `python -m spanet.train -of options_files/full_hadronic_ttbar/example.json --gpus NUM_GPUS` 
 where `NUM_GPUS` is the number of gpus available on your machine.
+
+### Hyperparameter Optimization
+
+Two scripts are available to search for a good set of hyperparameters.
+
+`spanet.optimize` only depends on the libraries that SPANet already requires,
+and supports random, grid and (with an optional `optuna` install) bayesian
+search, with early stopping of unpromising trials:
+
+```bash
+python -m spanet.optimize options_files/full_hadronic_ttbar/example.json -t 20 -e 10 -p 10 -g 1
+```
+
+The best configuration is written as a complete options file that can be fed
+straight back into `spanet.train`.
+
+`spanet.tune` is the older alternative built on [Ray Tune](https://docs.ray.io/en/latest/tune/index.html),
+which additionally requires `pip install "ray[tune]" "ray[train]" hyperopt`.
+
+[Refer to this page for the details of both scripts](docs/HyperparameterOptimization.md).
 
 ### Evaluation
 
