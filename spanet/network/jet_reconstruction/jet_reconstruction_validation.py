@@ -231,26 +231,33 @@ class JetReconstructionValidation(JetReconstructionNetwork):
 
         for key in classifications:
             accuracy = (classifications[key] == classification_targets[key])
-            accuracy_0 = (classifications[key][classification_targets[key] == 0] == classification_targets[key][classification_targets[key] == 0])
-            accuracy_1 = (classifications[key][classification_targets[key] == 1] == classification_targets[key][classification_targets[key] == 1])
             self.log(f"CLASSIFICATION/{key}_accuracy", accuracy.mean(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_target0", accuracy_0.mean(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_target1", accuracy_1.mean(), sync_dist=True)
             batch_weights = batch.event_weights.cpu().numpy()
             accuracy_eventw = accuracy * batch_weights
-            accuracy_eventw_0 = accuracy_0 * batch_weights[classification_targets[key] == 0]
-            accuracy_eventw_1 = accuracy_1 * batch_weights[classification_targets[key] == 1]
             self.log(f"CLASSIFICATION/{key}_accuracy_event_weight", accuracy_eventw.sum() / batch_weights.sum(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_weight_target0", accuracy_eventw_0.sum() / batch_weights[classification_targets[key] == 0].sum(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_weight_target1", accuracy_eventw_1.sum() / batch_weights[classification_targets[key] == 1].sum(), sync_dist=True)
             class_weights_per_sample = self.classification_weights[key][classification_targets[key]].cpu().numpy()
             combined_weights = batch_weights * class_weights_per_sample
             accuracy_totw = accuracy * combined_weights
-            accuracy_totw_0 = accuracy_0 * combined_weights[classification_targets[key] == 0]
-            accuracy_totw_1 = accuracy_1 * combined_weights[classification_targets[key] == 1]
             self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight", accuracy.sum() / combined_weights.sum(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target0", accuracy_0.sum() / combined_weights[classification_targets[key] == 0].sum(), sync_dist=True)
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target1", accuracy_1.sum() / combined_weights[classification_targets[key] == 1].sum(), sync_dist=True)
+
+            # Per-class breakdown - loops over every class present in this target's head,
+            # instead of only classes 0/1, so newly added classes (e.g. ZH/ZZ) get their own metrics too.
+            num_classes = self.classification_weights[key].shape[0]
+            for target_class in range(num_classes):
+                class_mask = classification_targets[key] == target_class
+                if class_mask.sum() == 0:
+                    continue
+
+                accuracy_c = classifications[key][class_mask] == classification_targets[key][class_mask]
+                self.log(f"CLASSIFICATION/{key}_accuracy_target{target_class}", accuracy_c.mean(), sync_dist=True)
+
+                weights_c = batch_weights[class_mask]
+                accuracy_eventw_c = accuracy_c * weights_c
+                self.log(f"CLASSIFICATION/{key}_accuracy_event_weight_target{target_class}", accuracy_eventw_c.sum() / weights_c.sum(), sync_dist=True)
+
+                combined_weights_c = combined_weights[class_mask]
+                accuracy_totw_c = accuracy_c * combined_weights_c
+                self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target{target_class}", accuracy_totw_c.sum() / combined_weights_c.sum(), sync_dist=True)
 
         for name, value in metrics.items():
             if not np.isnan(value):
