@@ -94,8 +94,13 @@ We describe this Feynman diagram structure with a simple two layer tree. Give ea
 
 ### Exclusive input collections
 
-When a decay product names an input, that assignment is **exclusive**: the network may only assign that
-decay product to a vector coming from that input. For example, with
+By default every reconstructable input is concatenated into a **single merged collection** which any decay
+product may be assigned to. Naming an input after a decay product only tells SPANet how to interpret the
+indices stored in your dataset, it does not restrict what the network may assign. In the example below the
+network is free to assign `q1` to a `JetHiggs` vector.
+
+The `assignment_source_exclusivity` option (see [`Options.md`](Options.md)) makes those assignments
+**exclusive** instead. With
 
 ```yaml
 INPUTS:
@@ -117,22 +122,52 @@ EVENT:
     - q2: JetVBF
 ```
 
-`q1` and `q2` can only ever be assigned to a `JetVBF` vector and `b1`-`b4` can only ever be assigned to a
-`JetHiggs` vector, both during training and when predicting. Internally SPANet concatenates every
-sequential input into a single sequence, so this constraint is implemented by masking out the forbidden
-vectors in the assignment distribution of each decay product. It can be disabled with the
-`assignment_source_exclusivity` option, in which case the different inputs are merged into a single
-collection which every decay product may choose from.
+and `"assignment_source_exclusivity": true`, `q1` and `q2` can only ever be assigned to a `JetVBF` vector
+and `b1`-`b4` can only ever be assigned to a `JetHiggs` vector, both during training and when predicting.
+The constraint is implemented by masking out the forbidden vectors in the assignment distribution of each
+decay product, so the distribution is normalized only over the legal combinations and the training loss,
+the validation metrics and the predictions are all constrained in the same way.
 
-Decay products which do not name an input remain free to select a vector from any sequential input.
+Decay products which do not name an input remain free to select a vector from any sequential input, even
+when the option is enabled.
 
 Because two decay products related by a symmetry must be indistinguishable, they are required to come from
-the same input. The same holds for two event particles related by an event-level symmetry. SPANet raises an
-error when reading an event file which violates this.
+the same input. The same holds for two event particles related by an event-level symmetry. SPANet warns
+about an event file which violates this when reading it, and refuses to build a network from it when
+`assignment_source_exclusivity` is enabled.
 
-Note that the indices written by `predict.py` are indices into the collection a decay product is assigned
-to, matching the convention of the indices in the input dataset. Pass `--global_indices` to instead output
-indices into the merged sequence spanning every sequential input.
+### Migrating an existing configuration
+
+Existing event files and options files keep their previous behaviour with no changes: the option defaults
+to `false` and the outputs of `predict.py` are unchanged. To adopt exclusive collections:
+
+1. **Event file** — give every decay product the input it belongs to,
+   `decay_product: input_name`. Products of particles related by a symmetry must
+   name the same input. Nothing else in the event file changes.
+2. **Options file** — add `"assignment_source_exclusivity": true`.
+3. **Retrain.** The option changes the shape of the assignment distribution, so an existing checkpoint
+   trained without it has learnt to spread probability over the vectors which are now masked out. The
+   checkpoint still loads, since no weights are added or removed, but retraining is what actually buys you
+   the improved pairing.
+4. **Predict with `--local_indices`** if you want the predicted indices written in the index-space of the
+   collection each product belongs to, matching the convention of the indices in your input dataset. See
+   below.
+
+### Indices in the prediction output
+
+Internally SPANet concatenates every reconstructable input into a single sequence, so a target of the
+second input is offset by the size of the first. For the example above, `JetHiggs` occupies indices
+`0..N_higgs-1` and `JetVBF` occupies `N_higgs..N_higgs+N_vbf-1`.
+
+`predict.py` writes the assignments in that merged index-space by default. Pass `--local_indices` to
+instead write each decay product as an index into its own collection, which is the same convention used by
+the `TARGETS` indices of the input dataset. Each output dataset of a product which names an input also
+carries two HDF5 attributes, `input` (the name of the collection) and `merged_indices` (whether the
+indices are in the merged space), so the output is unambiguous either way.
+
+Without `assignment_source_exclusivity`, the network can predict a vector outside of the collection a
+product is assigned to. `--local_indices` detects this, keeps the merged indices for that product and
+prints a warning rather than emitting an index into the wrong collection.
 
 
 

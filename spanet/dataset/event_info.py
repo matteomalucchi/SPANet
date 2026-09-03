@@ -81,15 +81,29 @@ class EventInfo:
         self.regressions = regressions
         self.classifications = classifications
 
-        self.validate_product_sources()
+        self.validate_product_sources(strict=False)
 
-    def validate_product_sources(self):
+    def validate_product_sources(self, strict: bool = False):
         """ Make sure that the input assignments of the products are compatible with the symmetries.
 
         Two products which may be exchanged by a symmetry have to be indistinguishable, so they must
         also come from the same input collection. The same holds for two event particles which may be
         exchanged by an event-level symmetry.
+
+        The input assignments are only used to offset the targets unless `assignment_source_exclusivity`
+        is enabled, so an inconsistent event file is merely reported when reading it. It becomes an error
+        once the network actually constrains the assignments to their inputs.
         """
+        def report(message: str):
+            if strict:
+                raise ValueError(
+                    f"{message} "
+                    f"This is required by the `assignment_source_exclusivity` option, either fix the "
+                    f"event file or disable the option."
+                )
+
+            print(f"Warning: {message}")
+
         for event_particle, product_particles in self.product_particles.items():
             sources = product_particles.sources
             permutations = self.product_symmetries[event_particle].permutations
@@ -99,7 +113,7 @@ class EventInfo:
                     cycle_sources = {sources[index] for index in cycle}
                     if len(cycle_sources) > 1:
                         cycle_names = ", ".join(product_particles[index] for index in cycle)
-                        raise ValueError(
+                        report(
                             f"Products ({cycle_names}) of {event_particle} are related by a symmetry "
                             f"but are assigned to different inputs. "
                             f"Symmetric products must share the same input collection."
@@ -114,7 +128,7 @@ class EventInfo:
 
                 if len(cycle_sources) > 1:
                     cycle_names = ", ".join(self.event_particles[index] for index in cycle)
-                    raise ValueError(
+                    report(
                         f"Event particles ({cycle_names}) are related by a symmetry but their products "
                         f"are assigned to different inputs. "
                         f"Symmetric particles must share the same input collections."

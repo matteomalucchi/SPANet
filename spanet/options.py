@@ -72,7 +72,11 @@ class Options(Namespace):
         # branch decoders, so it affects the training loss, the validation metrics, and the
         # predictions in exactly the same way. Products without an explicit input remain free to
         # select any reconstructable vector.
-        self.assignment_source_exclusivity: bool = True
+        #
+        # Disabled by default to preserve the original behaviour, where every reconstructable input is
+        # merged into a single collection which any product may select from. Enabling it requires the
+        # products of symmetric particles to share the same input. See `docs/EventInfo.md`.
+        self.assignment_source_exclusivity: bool = False
 
         # Number of heads for multi-head attention, used in all transformer layers.
         self.num_attention_heads: int = 4

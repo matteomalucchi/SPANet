@@ -25,7 +25,8 @@ def localize_assignment(
     back so that, for example, a product assigned to `JetVBF` is an index into the `JetVBF` collection.
 
     Products without an explicit input in the event file stay in the merged index-space, since there is
-    no single collection to map them into.
+    no single collection to map them into. The same holds for every product unless `--local_indices` is
+    requested, which keeps the default output identical to previous versions.
     """
     if source < 0:
         return assignment
@@ -57,7 +58,7 @@ def create_hdf5_output(
     dataset: JetReconstructionDataset,
     evaluation: Evaluation,
     full_outputs: Optional[Outputs],
-    global_indices: bool = False
+    local_indices: bool = False
 ):
     print(f"Creating output file at: {output_file}")
     with h5py.File(output_file, 'w') as output:
@@ -77,7 +78,7 @@ def create_hdf5_output(
 
             for i, product_particle in enumerate(product_particles):
                 assignment = evaluation.assignments[event_particle][:, i]
-                source = -1 if global_indices else product_sources[i]
+                source = product_sources[i] if local_indices else -1
 
                 assignment = localize_assignment(
                     dataset, assignment, event_particle, product_particle, source
@@ -130,7 +131,7 @@ def main(log_directory: str,
          event_file: Optional[str],
          batch_size: Optional[int],
          output_vectors: bool,
-         global_indices: bool,
+         local_indices: bool,
          gpu: bool,
          fp16: bool):
     model = load_model(log_directory, test_file, event_file, batch_size, gpu, fp16=fp16, checkpoint=checkpoint)
@@ -141,7 +142,7 @@ def main(log_directory: str,
         evaluation = evaluate_on_test_dataset(model, return_full_output=False, fp16=fp16)
         full_outputs = None
 
-    create_hdf5_output(output_file, model.testing_dataset, evaluation, full_outputs, global_indices)
+    create_hdf5_output(output_file, model.testing_dataset, evaluation, full_outputs, local_indices)
 
 
 if __name__ == '__main__':
@@ -171,9 +172,11 @@ if __name__ == '__main__':
     parser.add_argument("-fp16", "--fp16", action="store_true",
                         help="Use Automatic Mixed Precision for inference.")
 
-    parser.add_argument("-gi", "--global_indices", action="store_true",
-                        help="Output the assignment indices in the merged index-space spanning every input "
-                             "instead of the index-space of the input each product is assigned to.")
+    parser.add_argument("-li", "--local_indices", action="store_true",
+                        help="Output the assignment indices of a decay product in the index-space of the "
+                             "input it is assigned to in the event file, matching the convention of the "
+                             "indices in the input dataset. By default the indices are in the merged "
+                             "index-space spanning every reconstructable input.")
 
     parser.add_argument("-v", "--output_vectors", action="store_true",
                         help="Include embedding vectors in output in an additional section of the HDF5.")

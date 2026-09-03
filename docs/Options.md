@@ -41,3 +41,21 @@ using `python train.py --help`. Some common ones include:
 - `--epochs N` to set the number of training epochs.
 - `--log_dir DIR` to set the output directory to something different from the current directory.
 - `--name NAME` to set the log directory name to something differnt than `lightning_logs`.
+
+## Notable Options
+
+### `assignment_source_exclusivity`
+Default `false`. When a decay product names an input in the event file
+(`q1: JetVBF`), that assignment normally only tells SPANet how to interpret the
+indices in your dataset — every reconstructable input is merged into a single
+collection which any decay product may be assigned to.
+
+Setting this option to `true` makes those assignments exclusive: a decay product
+may only be assigned to a vector of the input it names, during training and when
+predicting. Decay products which do not name an input are unaffected and may
+still select any vector.
+
+Enabling it requires the decay products of symmetric particles to share the same
+input, and requires retraining to have any benefit. See the
+[event file documentation](EventInfo.md#exclusive-input-collections) for the full
+description and a migration checklist.

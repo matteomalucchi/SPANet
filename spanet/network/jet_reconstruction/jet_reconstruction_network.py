@@ -42,6 +42,11 @@ class JetReconstructionNetwork(JetReconstructionBase):
 
         self.hidden_dim = options.hidden_dim
 
+        # The input assignments only constrain the network when this option is enabled, so this is the
+        # point where an event file which assigns different inputs to symmetric particles becomes invalid.
+        if options.assignment_source_exclusivity:
+            self.event_info.validate_product_sources(strict=True)
+
         self.embedding = compile_module(MultiInputVectorEmbedding(
             options,
             self.training_dataset
