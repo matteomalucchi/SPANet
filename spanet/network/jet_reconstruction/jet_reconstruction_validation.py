@@ -238,7 +238,7 @@ class JetReconstructionValidation(JetReconstructionNetwork):
             class_weights_per_sample = self.classification_weights[key][classification_targets[key]].cpu().numpy()
             combined_weights = batch_weights * class_weights_per_sample
             accuracy_totw = accuracy * combined_weights
-            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight", accuracy.sum() / combined_weights.sum(), sync_dist=True)
+            self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight", accuracy_totw.sum() / combined_weights.sum(), sync_dist=True)
 
             # Per-class breakdown - loops over every class present in this target's head,
             # instead of only classes 0/1, so newly added classes (e.g. ZH/ZZ) get their own metrics too.
