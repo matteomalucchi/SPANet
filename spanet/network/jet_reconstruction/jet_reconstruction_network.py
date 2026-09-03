@@ -57,6 +57,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
                 event_particle_name,
                 self.event_info.product_particles[event_particle_name].names,
                 product_symmetry,
+                self.event_info.product_particles[event_particle_name].sources,
                 self.enable_softmax
             )
             for event_particle_name, product_symmetry
@@ -82,7 +83,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
 
     def forward(self, sources: Tuple[Source, ...]) -> Outputs:
         # Embed all of the different input regression_vectors into the same latent space.
-        embeddings, padding_masks, sequence_masks, global_masks = self.embedding(sources)
+        embeddings, padding_masks, sequence_masks, global_masks, input_indices = self.embedding(sources)
 
         # Extract features from data using transformer
         hidden, event_vector = self.encoder(embeddings, padding_masks, sequence_masks)
@@ -103,7 +104,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
                 assignment_mask,
                 event_particle_vector,
                 product_particle_vectors
-            ) = decoder(hidden, padding_masks, sequence_masks, global_masks)
+            ) = decoder(hidden, padding_masks, sequence_masks, global_masks, input_indices)
 
             assignments.append(assignment)
             detections.append(detection)

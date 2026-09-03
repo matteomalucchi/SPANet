@@ -92,6 +92,48 @@ The second **required** section. This will contain a simplified Feynman diagram 
 
 We describe this Feynman diagram structure with a simple two layer tree. Give each event particle a unique name. Decay particles may repeat names as long as they belong to different event particles.
 
+### Exclusive input collections
+
+When a decay product names an input, that assignment is **exclusive**: the network may only assign that
+decay product to a vector coming from that input. For example, with
+
+```yaml
+INPUTS:
+  SEQUENTIAL:
+    JetHiggs:
+      ...
+    JetVBF:
+      ...
+
+EVENT:
+  h1:
+    - b1: JetHiggs
+    - b2: JetHiggs
+  h2:
+    - b3: JetHiggs
+    - b4: JetHiggs
+  vbf:
+    - q1: JetVBF
+    - q2: JetVBF
+```
+
+`q1` and `q2` can only ever be assigned to a `JetVBF` vector and `b1`-`b4` can only ever be assigned to a
+`JetHiggs` vector, both during training and when predicting. Internally SPANet concatenates every
+sequential input into a single sequence, so this constraint is implemented by masking out the forbidden
+vectors in the assignment distribution of each decay product. It can be disabled with the
+`assignment_source_exclusivity` option, in which case the different inputs are merged into a single
+collection which every decay product may choose from.
+
+Decay products which do not name an input remain free to select a vector from any sequential input.
+
+Because two decay products related by a symmetry must be indistinguishable, they are required to come from
+the same input. The same holds for two event particles related by an event-level symmetry. SPANet raises an
+error when reading an event file which violates this.
+
+Note that the indices written by `predict.py` are indices into the collection a decay product is assigned
+to, matching the convention of the indices in the input dataset. Pass `--global_indices` to instead output
+indices into the merged sequence spanning every sequential input.
+
 
 
 ## `PERMUTATIONS`
