@@ -1,3 +1,4 @@
+import os
 from glob import glob
 from typing import Optional, Union, Tuple
 
@@ -44,11 +45,13 @@ def tree_concatenate(trees):
 def get_score(check_dict, file):
     print(file)
     if "last" in file: #score of 0 for last means, if there is any better training, this will be the one taken.
-        check_dict[0] = file
+        check_dict.setdefault(0, []).append((0, file))
         return check_dict
-    parts = file.split('-')
-    score = float(f"{parts[1].split('.')[0]}.{parts[1].split('.')[1]}") #rather some hack to get the score out of the filename
-    check_dict[score] = file
+    epoch_str, score_str = os.path.basename(file).rsplit('-', 1)
+    epoch = int(epoch_str)
+    score = float(score_str.rsplit('.ckpt', 1)[0])
+    # multiple checkpoints can tie on the (rounded) score; keep the earliest epoch among them
+    check_dict.setdefault(score, []).append((epoch, file))
     return check_dict
 
 def load_model(
@@ -71,7 +74,7 @@ def load_model(
         for point in checkpoints:
             check_dict=get_score(check_dict,point)
         maxval = max(check_dict.keys())
-        checkpoint = check_dict[maxval]
+        checkpoint = min(check_dict[maxval], key=lambda epoch_file: epoch_file[0])[1]
 
     print(f"Loading: {checkpoint}")
     checkpoint = torch.load(checkpoint, map_location='cpu')
