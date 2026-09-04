@@ -142,6 +142,11 @@ about an event file which violates this when reading it, and refuses to build a 
 Existing event files and options files keep their previous behaviour with no changes: the option defaults
 to `false` and the outputs of `predict.py` are unchanged. To adopt exclusive collections:
 
+0. **Check the split is exact.** Measure, in the ntuple you build the dataset from, how often the jet
+   truth-matched to a parton ends up in a collection other than the one its decay product declares.
+   That fraction is a hard ceiling on reconstruction efficiency once the option is on. See
+   [`ExclusiveInputCollections.md`](ExclusiveInputCollections.md#6-limitations-and-what-the-spanet-papers-say-about-this)
+   — the SPANet papers reject the analogous `b`-tag partitioning of the χ² baseline for this reason.
 1. **Event file** — give every decay product the input it belongs to,
    `decay_product: input_name`. Products of particles related by a symmetry must
    name the same input. Nothing else in the event file changes.

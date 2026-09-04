@@ -6,6 +6,16 @@ the learning problem, and when it is the right thing to do.
 For the configuration syntax and a migration checklist, see
 [`EventInfo.md`](EventInfo.md#exclusive-input-collections).
 
+Throughout, **[SPANet-I]** refers to Fenton, Shmakov, Ho, Hsu, Whiteson & Baldi, *Permutationless
+many-jet event reconstruction with symmetry preserving attention networks*,
+[Phys. Rev. D 105, 112008 (2022)](https://doi.org/10.1103/PhysRevD.105.112008), and **[SPANet-II]** to
+Shmakov, Fenton, Ho, Hsu, Whiteson & Baldi, *SPANet: Generalized permutationless set assignment for
+particle physics using symmetry preserving attention*,
+[SciPost Phys. 12, 178 (2022)](https://doi.org/10.21468/SciPostPhys.12.5.178). Multiple input
+collections are a later addition to the codebase and are **not described in either paper** — the event
+file in [SPANet-II] §6 has a single `[SOURCE]` block and no per-product input — so the argument below is
+made against the papers' formalism rather than quoting an existing treatment of it.
+
 ---
 
 ## 1. The starting point: one merged assignment space
@@ -57,7 +67,13 @@ distribution, and SPANet already uses this mechanism twice:
 
 The source mask is the third member of that family. It is not a new architectural idea; it is the same
 mechanism SPANet already uses to encode combinatorial facts that are known *a priori* rather than
-learned.
+learned. [SPANet-II] §3 describes it explicitly for the uniqueness constraint:
+
+> "At this stage, we also mask all diagonal terms in $\mathcal{O}$ by setting them to $-\infty$,
+> enforcing assignment uniqueness. Finally, STA normalizes the output tensor by performing a $k_p$-dimensional
+> softmax, producing a final joint distribution $\mathcal{P}_p$."
+
+The source mask sets a different set of cells to $-\infty$ at the same point in the same computation.
 
 ---
 
@@ -204,33 +220,111 @@ by definition an index into that collection. The truth conditional probability o
 assignment is exactly zero — not small, zero. Masking a cell whose true probability is exactly zero
 removes no representable solution and introduces no bias.
 
-**It is consistent with the symmetry structure.** The assignment tensor is symmetrised over the
-particle's permutation group before the mask is applied, so the mask must be invariant under that group
-for the two to agree. This is why SPANet requires products related by a symmetry (and event particles
-related by an event-level symmetry) to declare the same input, and validates it — `b1 ↔ b2` are
-interchangeable only if they are drawn from the same pool.
+**The symmetry requirement is forced by the papers' formalism, not a convention.** [SPANet-II] Eq. 2
+defines the jet symmetry group $G_p$ by requiring the indices of $\mathcal{P}_p$ to commute:
+$\mathcal{P}_{j_1 \ldots j_{k_p}} = \mathcal{P}_{j_{\sigma(1)} \ldots j_{\sigma(k_p)}}$ for all
+$\sigma \in G_p$. The logits $\mathcal{O}$ are symmetrised to guarantee this, so a mask that is *not*
+$G_p$-invariant would break Eq. 2 outright — `b1 ↔ b2` are interchangeable only if they are drawn from
+the same pool.
+
+At the event level it is worse than an inconsistency. [SPANet-II] Eq. 6 evaluates each branch's
+distribution against *permuted* targets and takes the minimum over $G_E$:
+
+$$\mathcal{L}^{\text{masked}}_{\min} = \min_{\sigma \in G_E} \sum_i \frac{\mathcal{M}_{\sigma(i)}\,\mathrm{CE}(\mathcal{P}_i, \mathcal{T}_{\sigma(i)})}{\mathrm{CB}(\mathcal{M}_{\sigma(1)}, \ldots)}$$
+
+If two event particles related by $G_E$ declared different inputs, the swapped term would evaluate
+$\mathcal{P}_i$ at a target lying entirely in $i$'s masked-out region, giving
+$\mathrm{CE} = -\log 0 = +\infty$. SPANet therefore validates both requirements and refuses to build
+the network when they are violated.
 
 **It costs nothing.** No parameters are added or removed, so existing checkpoints still load. The mask is
 a cached boolean tensor and the runtime cost is a single elementwise AND per branch per forward pass.
 
 ---
 
-## 6. Limitations and when *not* to enable it
+## 6. Limitations, and what the SPANet papers say about this
 
-- **It is hard, not soft.** If a VBF quark is genuinely best matched by a jet that your preprocessing put
-  in the `JetHiggs` collection, the network can never recover it. The constraint is only sound if the
-  collection split is a property of the *input construction* and your truth matching respects it. Check
-  that no event in your training targets has an index that crosses collections before enabling it — a
-  mismatch turns a recoverable error into an unlearnable one.
+**Read this section before enabling the option.** Both papers argue *against* hard-partitioning the
+input by a per-jet property, and the argument is a good one. It applies to this option whenever the
+collection split is a decision rather than a fact.
 
-- **It does not help if the split is itself uncertain.** If deciding which jets are "the VBF jets" is
-  part of the problem you want the network to solve, do not pre-split the input. Keep a single collection
-  and let SPANet assign; the merged behaviour is the correct one in that case.
+### The papers' objection
+
+Both papers criticise exactly this pattern in the $\chi^2$ baseline. [SPANet-II] §2.3:
+
+> "For example, to minimize the permutation count, it is usual for jets tagged as $b$-jets to be
+> separately permuted, only allowing $b$-tagged jets in $b$-quark positions and vice-versa. However,
+> given that $b$-tagging is not 100 % accurate and mis-tags are common, **some events become impossible
+> in this formulation**."
+
+And [SPANet-I] §V states the design choice as a feature of SPANet:
+
+> "We also note that SPANet does not enforce that $b$-tagged jets are selected in the position of the
+> $b$-quarks. This allows the network to correctly predict events in which there are mistagged jets,
+> while still utilizing $b$-tagging information."
+
+They quantify what that buys: in [SPANet-I] §VI, 8.1 % of two-top-identifiable events have at least one
+$b$-quark matched to a non-$b$-tagged jet — events which are **impossible** for the partitioned
+$\chi^2$ — and SPANet reconstructs those quarks with 29.4 % efficiency. Partitioning would have
+forfeited all of them.
+
+### When the objection applies to you, and when it does not
+
+The distinction is whether the collection boundary is *noisy* or *exact*.
+
+| | $b$-tagging split (papers' example) | An exact collection split |
+| --- | --- | --- |
+| What defines it | a classifier with a mis-tag rate | how the input arrays were built |
+| Can the true parton be in the other collection? | **yes**, and it happens | no, by construction |
+| Effect of masking | some events become unreconstructable | no reachable solution removed |
+
+A split into genuinely different object types — jets vs. leptons vs. photons vs. a MET-like object — is
+exact: a lepton label can never be satisfied by a jet. Masking there removes only cells whose true
+conditional probability is exactly zero.
+
+A split of *one* object type into two collections by a selection heuristic — "the two most forward jets
+are the VBF jets, the rest are the Higgs jets" — is **not** exact. It is a classifier, exactly like
+$b$-tagging, and the papers' objection applies in full force: every event where your heuristic put a
+true VBF jet in the `JetHiggs` array becomes unreconstructable, and the network can no longer use its
+much better learned judgement to override the heuristic.
+
+### The test to run before enabling it
+
+The quantity that decides this is not visible to SPANet, because by the time the data reaches the
+`TARGETS` group the indices are already local to each collection. You have to measure it upstream, in
+the ntuple you build the dataset from:
+
+> Of the jets truth-matched to the VBF quarks, what fraction were placed in the `JetHiggs` collection
+> (and vice versa)?
+
+That fraction is the **ceiling this option costs you** — the analogue of the 8.1 % in [SPANet-I]. If it
+is ~0, the constraint is free and the arguments in §3–§5 apply. If it is a few percent, weigh it
+against the gain: you are trading a hard ceiling for a smaller hypothesis space, and the trade is only
+worth it if the reduction wins back more than the ceiling costs. Measure both — train with and without
+the option and compare reconstruction efficiency on the same test set. Do not assume.
+
+If the split is uncertain enough that you would want the network to overrule it, do not pre-split at
+all: use a single collection, add the collection membership as an input *feature* instead, and let
+SPANet weigh it as evidence. That is precisely the "still utilizing $b$-tagging information" half of the
+[SPANet-I] quote, and it is why the option defaults to `false`.
+
+### Other limitations
+
+- **A collection with too few jets makes its particle unreconstructable.** If a particle needs $k$
+  vectors from a collection and an event supplies fewer real ones, the branch has no allowed cell at
+  all. SPANet reports that particle as unassigned (negative indices) rather than inventing an
+  assignment; the training loss is unaffected because such a particle is necessarily masked out.
+  Without the option the branch would instead have assigned jets from the other collection — a wrong
+  answer that also consumed a jet the other branches needed. Check how often your collections fall
+  short of the multiplicity they must supply.
 
 - **Retraining is required.** The option changes the normalisation of the loss. An existing checkpoint
   loads and will be constrained at inference, but it was trained to spread probability over cells that
-  are now masked, so its logits are not calibrated for the smaller space. The benefit comes from
-  training with the constraint in place.
+  are now masked, so its logits are not calibrated for the smaller space.
+
+- **The final assignment step is unchanged and still ad hoc.** [SPANet-II] §3 notes of the greedy
+  contradiction resolution that "this ad-hoc assignment process presents a potential limitation".
+  Exclusivity narrows what that step can get wrong across collections; it does not replace it.
 
 - **ONNX export bakes the mask in at trace time**, as it already does for the diagonal mask. An exported
   multi-collection model must be fed the same per-collection padding it was traced with.
@@ -241,12 +335,17 @@ a cached boolean tensor and the runtime cost is a single elementwise AND per bra
 
 > Multiple input collections are concatenated into a single sequence internally, and SPANet's assignment
 > head emits one categorical distribution over whole assignments of that sequence, constrained by masks
-> for padding and for repeated jets. Declaring a decay product's input collection in the event file adds a
-> third mask of the same kind: the outer product of per-product indicators over the collection each
-> product belongs to, applied to the assignment logits before the log-softmax. The normalisation therefore
-> runs over the legal combinations only, so the cross-entropy compares the correct assignment against just
-> its physically possible competitors instead of also having to learn to suppress combinations that are
+> that set impossible cells to $-\infty$ before the $k_p$-dimensional softmax — for padding, and for
+> repeated jets ([SPANet-II] §3). Declaring a decay product's input collection in the event file adds a
+> third mask of the same kind, at the same point in the same computation: the outer product of
+> per-product indicators over the collection each product belongs to. The normalisation therefore runs
+> over the legal combinations only, so the cross-entropy compares the correct assignment against just its
+> physically possible competitors instead of also having to learn to suppress combinations that are
 > impossible by construction — for the VBF branch of a $HH\to4b$ + VBF configuration this removes 87 % of
 > the output cells. The transformer encoders still attend over every collection, so cross-collection
 > context (which is what defines a VBF jet in the first place) is preserved; only the final assignment is
-> restricted. The change adds no parameters.
+> restricted. The change adds no parameters. The constraint is sound exactly when the collection split is
+> a property of how the input was built rather than the output of a noisy per-jet classifier: both papers
+> reject the analogous $b$-tag partitioning of the $\chi^2$ baseline precisely because mis-tags make some
+> events unreconstructable, so the fraction of partons whose matched jet lands in the wrong collection is
+> the ceiling this option costs, and it should be measured before enabling it (§6).

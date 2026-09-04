@@ -16,7 +16,7 @@ from collections import defaultdict
 
 def default_assignment_fn(outputs: Outputs):
     return extract_predictions([
-        np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
+        np.nan_to_num(assignment.detach().cpu().numpy(), nan=-np.inf)
         for assignment in outputs.assignments
     ])
 
