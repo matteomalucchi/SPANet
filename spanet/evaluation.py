@@ -1,4 +1,5 @@
 import os
+import re
 from glob import glob
 from typing import Optional, Union, Tuple
 
@@ -47,9 +48,14 @@ def get_score(check_dict, file):
     if "last" in file: #score of 0 for last means, if there is any better training, this will be the one taken.
         check_dict.setdefault(0, []).append((0, file))
         return check_dict
-    epoch_str, score_str = os.path.basename(file).rsplit('-', 1)
+    name = os.path.basename(file)
+    if name.endswith('.ckpt'):
+        name = name[:-len('.ckpt')]
+    # pytorch-lightning appends "-v<N>" when a checkpoint name already exists on disk
+    name = re.sub(r'-v\d+$', '', name)
+    epoch_str, score_str = name.rsplit('-', 1)
     epoch = int(epoch_str)
-    score = float(score_str.rsplit('.ckpt', 1)[0])
+    score = float(score_str)
     # multiple checkpoints can tie on the (rounded) score; keep the earliest epoch among them
     check_dict.setdefault(score, []).append((epoch, file))
     return check_dict
@@ -66,10 +72,10 @@ def load_model(
 ) -> JetReconstructionModel:
     # Load the best-performing checkpoint on validation data
     if checkpoint is None:
-        # reverse the files to evaluate the first model which has the highest accuracy and not the last
-        checkpoints = sorted(glob(f"{log_directory}/checkpoints/*"), reverse=True)
-        #Get maximal value for the checkpoint score by disecting the name and creating a dictionary of score to filename
-        #Then chose the dictionary key with the maximum value (the maximal score) and take the corresponding file.
+        checkpoints = sorted(glob(f"{log_directory}/checkpoints/*"))
+        #Get maximal value for the checkpoint score by disecting the name and creating a dictionary of score to
+        #(epoch, filename) pairs. Then chose the dictionary key with the maximum value (the maximal score) and,
+        #among the checkpoints sharing it, the one from the earliest epoch.
         check_dict = {}
         for point in checkpoints:
             check_dict=get_score(check_dict,point)
