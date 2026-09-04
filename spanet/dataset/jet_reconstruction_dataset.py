@@ -100,13 +100,26 @@ class JetReconstructionDataset(Dataset):
             ))
 
             # Compute the jet offsets for different input sources if we are reconstructing more than one type of object.
-            self.source_offsets = torch.tensor([
-                dataset.max_vectors()
-                for name, dataset in self.sources.items()
-                if dataset.reconstructable
-            ])
-            self.source_offsets = torch.nn.functional.pad(self.source_offsets, (1, 0), value=0)
-            self.source_offsets = torch.cumsum(self.source_offsets, 0)[:-1]
+            # Only the reconstructable inputs take up room in the assignment index space, but the offsets are
+            # stored for every input and indexed in the same way as `event_info.input_names` so that a global
+            # input declared before a sequential one does not shift the indexing of the sequential inputs.
+            source_offsets = []
+            current_offset = 0
+            for name, dataset in self.sources.items():
+                source_offsets.append(current_offset)
+                if dataset.reconstructable:
+                    current_offset += dataset.max_vectors()
+
+            self.source_offsets = torch.tensor(source_offsets, dtype=torch.int64)
+
+            # The number of assignable vectors contributed by each input. Non-reconstructable inputs,
+            # such as global inputs, are never assignable and therefore contribute nothing.
+            self.source_sizes = torch.tensor([
+                dataset.max_vectors() if dataset.reconstructable else 0
+                for dataset in self.sources.values()
+            ], dtype=torch.int64)
+
+            self.validate_assignment_sources()
 
             # Load various types of targets.
             self.assignments = self.load_assignments(file, limit_index)
@@ -130,6 +143,19 @@ class JetReconstructionDataset(Dataset):
         # Optionally limit the dataset to a specific number of jets.
         if vector_limit > 0:
             self.limit_dataset_to_jet_count(vector_limit)
+
+    def validate_assignment_sources(self):
+        """ Make sure that every product assigned to an input in the event file may actually be assigned. """
+        input_names = self.event_info.input_names
+
+        for event_particle, product_particles in self.event_info.product_particles.items():
+            for product, source in zip(product_particles, product_particles.sources):
+                if source >= 0 and self.source_sizes[source] == 0:
+                    raise ValueError(
+                        f"Product {product} of {event_particle} is assigned to input "
+                        f"'{input_names[source]}', which is not a reconstructable input. "
+                        f"Only SEQUENTIAL and RELATIVE inputs may be assigned to products."
+                    )
 
     @staticmethod
     def dataset(hdf5_file: h5py.File, group: List[str], key: str) -> h5py.Dataset:

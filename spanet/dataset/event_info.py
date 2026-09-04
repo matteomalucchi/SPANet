@@ -81,6 +81,66 @@ class EventInfo:
         self.regressions = regressions
         self.classifications = classifications
 
+        self.validate_product_sources(strict=False)
+
+    def validate_product_sources(self, strict: bool = False):
+        """ Make sure that the input assignments of the products are compatible with the symmetries.
+
+        Two products which may be exchanged by a symmetry have to be indistinguishable, so they must
+        also come from the same input collection. The same holds for two event particles which may be
+        exchanged by an event-level symmetry.
+
+        The input assignments are only used to offset the targets unless `assignment_source_exclusivity`
+        is enabled, so an inconsistent event file is merely reported when reading it. It becomes an error
+        once the network actually constrains the assignments to their inputs.
+        """
+        def report(message: str):
+            if strict:
+                raise ValueError(
+                    f"{message} "
+                    f"This is required by the `assignment_source_exclusivity` option, either fix the "
+                    f"event file or disable the option."
+                )
+
+            print(f"Warning: {message}")
+
+        for event_particle, product_particles in self.product_particles.items():
+            sources = product_particles.sources
+            permutations = self.product_symmetries[event_particle].permutations
+
+            for permutation in permutations:
+                for cycle in permutation:
+                    cycle_sources = {sources[index] for index in cycle}
+                    if len(cycle_sources) > 1:
+                        cycle_names = ", ".join(product_particles[index] for index in cycle)
+                        report(
+                            f"Products ({cycle_names}) of {event_particle} are related by a symmetry "
+                            f"but are assigned to different inputs. "
+                            f"Symmetric products must share the same input collection."
+                        )
+
+        for permutation in self.event_symmetries.permutations:
+            for cycle in permutation:
+                cycle_sources = {
+                    tuple(self.product_particles[self.event_particles[index]].sources)
+                    for index in cycle
+                }
+
+                if len(cycle_sources) > 1:
+                    cycle_names = ", ".join(self.event_particles[index] for index in cycle)
+                    report(
+                        f"Event particles ({cycle_names}) are related by a symmetry but their products "
+                        f"are assigned to different inputs. "
+                        f"Symmetric particles must share the same input collections."
+                    )
+
+    def product_source_names(self, event_particle: str) -> Tuple[Optional[str], ...]:
+        """ The name of the input collection assigned to every product of an event particle. """
+        return tuple(
+            self.input_names[source] if source >= 0 else None
+            for source in self.product_particles[event_particle].sources
+        )
+
     def __str__(self):
         info = []
 
@@ -290,6 +350,13 @@ class EventInfo:
             ]
 
             input_names = list(input_types.keys())
+            for source in product_sources:
+                if source is not None and source not in input_names:
+                    raise ValueError(
+                        f"Product of {event_particle} is assigned to the unknown input '{source}'. "
+                        f"Available inputs are: {input_names}."
+                    )
+
             product_sources = [
                 input_names.index(source) if source is not None else -1
                 for source in product_sources

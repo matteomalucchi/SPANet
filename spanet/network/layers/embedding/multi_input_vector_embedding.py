@@ -28,7 +28,7 @@ class MultiInputVectorEmbedding(nn.Module):
             options.skip_connections
         )
 
-    def forward(self, sources: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, sources: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
 
         Parameters
@@ -46,11 +46,15 @@ class MultiInputVectorEmbedding(nn.Module):
             Positive mask indicating jet is real.
         global_mask: [T]
             Negative mask for indicating a sequential variable or a global variable.
+        input_index: [T]
+            The index of the input which produced each vector, indexed in the same order as
+            `event_info.input_names`. Used to keep the different input collections exclusive.
         """
         embeddings = []
         padding_masks = []
         sequence_masks = []
         global_masks = []
+        input_indices = []
 
         for input_index, vector_embedding_layer in enumerate(self.vector_embedding_layers):
             source_data, source_mask = sources[input_index]
@@ -64,11 +68,21 @@ class MultiInputVectorEmbedding(nn.Module):
             sequence_masks.append(current_embeddings[2])
             global_masks.append(current_embeddings[3])
 
+            # Remember which input every vector in the combined sequence came from.
+            current_global_mask = current_embeddings[3]
+            input_indices.append(torch.full(
+                (current_global_mask.shape[0],),
+                input_index,
+                dtype=torch.int64,
+                device=current_global_mask.device
+            ))
+
         embeddings = torch.cat(embeddings, dim=0)
         padding_masks = torch.cat(padding_masks, dim=1)
         sequence_masks = torch.cat(sequence_masks, dim=0)
         global_masks = torch.cat(global_masks, dim=0)
+        input_indices = torch.cat(input_indices, dim=0)
 
         embeddings = self.final_embedding_layer(embeddings, sequence_masks)
 
-        return embeddings, padding_masks, sequence_masks, global_masks
+        return embeddings, padding_masks, sequence_masks, global_masks, input_indices

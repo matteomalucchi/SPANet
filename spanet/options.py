@@ -65,6 +65,19 @@ class Options(Namespace):
         # Whether or not to use a split approximate tensor attention layer.
         self.split_symmetric_attention: bool = True
 
+        # Whether or not to force the input collections defined in the event file to be exclusive.
+        # If a product particle is assigned to a specific input in the event file, for example
+        # `q1: JetVBF`, then enabling this will mask out every vector which does not belong to that
+        # input from that product's assignment distribution. This constraint is applied inside of the
+        # branch decoders, so it affects the training loss, the validation metrics, and the
+        # predictions in exactly the same way. Products without an explicit input remain free to
+        # select any reconstructable vector.
+        #
+        # Disabled by default to preserve the original behaviour, where every reconstructable input is
+        # merged into a single collection which any product may select from. Enabling it requires the
+        # products of symmetric particles to share the same input. See `docs/EventInfo.md`.
+        self.assignment_source_exclusivity: bool = False
+
         # Number of heads for multi-head attention, used in all transformer layers.
         self.num_attention_heads: int = 4
 
