@@ -318,6 +318,12 @@ SPANet weigh it as evidence. That is precisely the "still utilizing $b$-tagging 
   answer that also consumed a jet the other branches needed. Check how often your collections fall
   short of the multiplicity they must supply.
 
+  The same reporting now applies without the option, in the degenerate case where an event has fewer
+  real vectors *in total* than a particle needs. Earlier versions emitted a fabricated assignment there
+  (every product assigned to vector 0, which is not even a unique assignment); such a particle is now
+  reported as unassigned. This is the only respect in which behaviour changes when
+  `assignment_source_exclusivity` is off.
+
 - **Retraining is required.** The option changes the normalisation of the loss. An existing checkpoint
   loads and will be constrained at inference, but it was trained to spread probability over cells that
   are now masked, so its logits are not calibrated for the smaller space.
