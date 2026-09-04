@@ -245,20 +245,31 @@ class JetReconstructionValidation(JetReconstructionNetwork):
             num_classes = self.classification_weights[key].shape[0]
             for target_class in range(num_classes):
                 class_mask = classification_targets[key] == target_class
-                if class_mask.sum() == 0:
-                    continue
+                num_class_events = int(class_mask.sum())
 
                 accuracy_c = classifications[key][class_mask] == classification_targets[key][class_mask]
-                self.log(f"CLASSIFICATION/{key}_accuracy_target{target_class}", accuracy_c.mean(), sync_dist=True)
-
                 weights_c = batch_weights[class_mask]
-                accuracy_eventw_c = accuracy_c * weights_c
-                self.log(f"CLASSIFICATION/{key}_accuracy_event_weight_target{target_class}", accuracy_eventw_c.sum() / weights_c.sum(), sync_dist=True)
-
                 combined_weights_c = combined_weights[class_mask]
-                accuracy_totw_c = accuracy_c * combined_weights_c
-                self.log(f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target{target_class}", accuracy_totw_c.sum() / combined_weights_c.sum(), sync_dist=True)
 
+                # Log every class on every batch, even when this rank's shard has none of it:
+                # sync_dist reduces each metric with a collective every rank must join, and
+                # batch_size=0 makes those empty batches contribute nothing to the epoch mean.
+                self.log(
+                    f"CLASSIFICATION/{key}_accuracy_target{target_class}",
+                    accuracy_c.mean() if num_class_events else 0.0,
+                    sync_dist=True, batch_size=num_class_events,
+                )
+                self.log(
+                    f"CLASSIFICATION/{key}_accuracy_event_weight_target{target_class}",
+                    (accuracy_c * weights_c).sum() / weights_c.sum() if weights_c.sum() else 0.0,
+                    sync_dist=True, batch_size=num_class_events,
+                )
+                self.log(
+                    f"CLASSIFICATION/{key}_accuracy_event_and_class_weight_target{target_class}",
+                    (accuracy_c * combined_weights_c).sum() / combined_weights_c.sum() if combined_weights_c.sum() else 0.0,
+                    sync_dist=True, batch_size=num_class_events,
+                )
+                
         for name, value in metrics.items():
             if not np.isnan(value):
                 self.log(name, value, sync_dist=True, on_epoch=True)
