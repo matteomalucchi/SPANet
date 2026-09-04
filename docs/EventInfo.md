@@ -100,7 +100,8 @@ indices stored in your dataset, it does not restrict what the network may assign
 network is free to assign `q1` to a `JetHiggs` vector.
 
 The `assignment_source_exclusivity` option (see [`Options.md`](Options.md)) makes those assignments
-**exclusive** instead. With
+**exclusive** instead. [`ExclusiveInputCollections.md`](ExclusiveInputCollections.md) explains how the
+constraint is realised in the network and why it is a sound thing to impose. With
 
 ```yaml
 INPUTS:

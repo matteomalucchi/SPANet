@@ -57,5 +57,7 @@ still select any vector.
 
 Enabling it requires the decay products of symmetric particles to share the same
 input, and requires retraining to have any benefit. See the
-[event file documentation](EventInfo.md#exclusive-input-collections) for the full
-description and a migration checklist.
+[event file documentation](EventInfo.md#exclusive-input-collections) for the
+configuration syntax and a migration checklist, and
+[Exclusive Input Collections](ExclusiveInputCollections.md) for how the constraint
+is implemented in the network and what it changes about the learning problem.
