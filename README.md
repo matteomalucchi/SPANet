@@ -78,6 +78,12 @@ the different setup components, or just follow the ttbar example.
 2. [Creating a training dataset](docs/Dataset.md).
 3. [Configuring training options](docs/Options.md).
 
+Additional reading:
+
+- [Exclusive input collections](docs/ExclusiveInputCollections.md) — how multiple input collections
+  (for example separate jet collections for a Higgs and a VBF selection) are kept from mixing during
+  assignment, and why.
+
 
 ### Training
 

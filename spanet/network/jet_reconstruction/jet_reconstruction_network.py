@@ -21,7 +21,7 @@ TArray = np.ndarray
 
 def default_assignment_fn(outputs: Outputs):
     return extract_predictions([
-        np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
+        np.nan_to_num(assignment.detach().cpu().numpy(), nan=-np.inf)
         for assignment in outputs.assignments
     ])
 
@@ -42,6 +42,11 @@ class JetReconstructionNetwork(JetReconstructionBase):
 
         self.hidden_dim = options.hidden_dim
 
+        # The input assignments only constrain the network when this option is enabled, so this is the
+        # point where an event file which assigns different inputs to symmetric particles becomes invalid.
+        if options.assignment_source_exclusivity:
+            self.event_info.validate_product_sources(strict=True)
+
         self.embedding = compile_module(MultiInputVectorEmbedding(
             options,
             self.training_dataset
@@ -57,6 +62,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
                 event_particle_name,
                 self.event_info.product_particles[event_particle_name].names,
                 product_symmetry,
+                self.event_info.product_particles[event_particle_name].sources,
                 self.enable_softmax
             )
             for event_particle_name, product_symmetry
@@ -82,7 +88,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
 
     def forward(self, sources: Tuple[Source, ...]) -> Outputs:
         # Embed all of the different input regression_vectors into the same latent space.
-        embeddings, padding_masks, sequence_masks, global_masks = self.embedding(sources)
+        embeddings, padding_masks, sequence_masks, global_masks, input_indices = self.embedding(sources)
 
         # Extract features from data using transformer
         hidden, event_vector = self.encoder(embeddings, padding_masks, sequence_masks)
@@ -103,7 +109,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
                 assignment_mask,
                 event_particle_vector,
                 product_particle_vectors
-            ) = decoder(hidden, padding_masks, sequence_masks, global_masks)
+            ) = decoder(hidden, padding_masks, sequence_masks, global_masks, input_indices)
 
             assignments.append(assignment)
             detections.append(detection)
@@ -173,7 +179,7 @@ class JetReconstructionNetwork(JetReconstructionBase):
         # Run the base prediction step
         with torch.no_grad():
             assignments = [
-                np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
+                np.nan_to_num(assignment.detach().cpu().numpy(), nan=-np.inf)
                 for assignment in self.forward(sources).assignments
             ]
 
